@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: gozzy-payroll
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 80
+    autoDeploy: true
