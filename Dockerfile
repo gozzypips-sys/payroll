@@ -1,15 +1,23 @@
+# ---------- Gozzy Payroll — Render-ready PHP image ----------
 FROM php:8.2-apache
 
-# Install PDO MySQL extension
-RUN docker-php-ext-install pdo pdo_mysql
+# Install any PHP extensions you might need later.
+# We do NOT install pdo_mysql — no database here.
+RUN docker-php-ext-install pdo
 
-# Copy your application code into the webroot
+# Enable Apache rewrite + headers
+RUN a2enmod rewrite headers
+
+# Copy the whole app into the Apache document root
 COPY . /var/www/html/
-
-# Set the working directory
 WORKDIR /var/www/html
 
-# Apache serves on port 80 by default, but Render will provide a PORT env var.
-# You need to configure Apache to listen on that port.
-# This command replaces the default port 80 with Render's $PORT.
-CMD sed -i "s/80/\${PORT}/g" /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf && apache2-foreground
+# Make Apache listen on Render's $PORT (default 10000) instead of 80
+RUN sed -i 's/Listen 80/Listen ${PORT}/' /etc/apache2/ports.conf && \
+    sed -i 's/:80/:${PORT}/' /etc/apache2/sites-available/000-default.conf && \
+    echo 'PassEnv PORT' >> /etc/apache2/apache2.conf
+
+# Use Apache's environment-aware entrypoint so $PORT is substituted at runtime
+CMD sed -i "s/Listen \${PORT}/Listen ${PORT}/" /etc/apache2/ports.conf && \
+    sed -i "s/:\\\${PORT}/:${PORT}/" /etc/apache2/sites-available/000-default.conf && \
+    apache2-foreground
