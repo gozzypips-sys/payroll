@@ -170,11 +170,7 @@ async function addEmployee(){
   try{
     log('Confirm in MetaMask...');
     await gozzyAddEmployee(wallet, name, role, country, currency, salary, taxBps);
-    await fetch('api/save-employee.php', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ name, role, country, currency, wallet, salary, tax_bps: taxBps })
-    });
-    log('✅ ' + name + ' added on-chain', 'ok');
+log('✅ ' + name + ' added on-chain', 'ok');
     ['empName','empRole','empSalary','empWallet'].forEach(id => document.getElementById(id).value='');
     await loadLiveEmployees();
   } catch(e){
