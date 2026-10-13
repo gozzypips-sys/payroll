@@ -1,6 +1,6 @@
-
+<?php require 'config.php';
 $demo = isset($_GET['demo']) && $_GET['demo'] == '1';
-?>
+?> 
 <!DOCTYPE html>
 <html>
 <head>
