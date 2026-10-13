@@ -1,10 +1,14 @@
 // ============================================================
-// Admin Terminal logic (demo + live)
+// Admin Terminal — Demo (realistic) + Live
 // ============================================================
 const isDemo = window.GOZZY_DEMO_MODE === true;
-let liveEmployees = [];   // populated on-chain in live mode
+let liveEmployees = [];
 
-// ---------- UI helpers ----------
+// ---------- shared ----------
+function shortAddr(a){ return a ? a.slice(0,6)+'...'+a.slice(-4) : ''; }
+function fmt(n, d=2){ return Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function badge(text, cls){ return `<span class="badge ${cls}">${text}</span>`; }
+
 function log(msg, cls=''){
   const el = document.getElementById('log');
   el.style.display = 'block';
@@ -14,12 +18,31 @@ function log(msg, cls=''){
   window.__logT = setTimeout(()=> el.style.display='none', 6000);
 }
 
-function badge(text, cls){ return `<span class="badge ${cls}">${text}</span>`; }
+// ---------- Demo state (mirrors real contract for realism) ----------
+const demoState = {
+  treasury: GOZZY_DEMO.company.treasury,
+  connected: false,
+  address: null,
+  employees: [],   // deep copy so we can mutate
+};
 
+function initDemoState(){
+  demoState.employees = GOZZY_DEMO.employees.map(e => ({
+    ...e,
+    lastPaid: "2026-09-30",
+    totalGross: parseFloat(e.salary) * 9,
+    totalNet: parseFloat(e.salary) * 9 * (1 - e.tax/10000),
+    totalTax: parseFloat(e.salary) * 9 * (e.tax/10000),
+    ytdNet: parseFloat(e.salary) * 9 * (1 - e.tax/10000),
+  }));
+}
+initDemoState();
+
+// ---------- RENDER ----------
 function renderEmployees(){
   const tb = document.getElementById('empTbody');
   const q  = (document.getElementById('search').value || '').toLowerCase();
-  const rows = isDemo ? GOZZY_DEMO.employees : liveEmployees;
+  const rows = isDemo ? demoState.employees : liveEmployees;
 
   const filtered = rows.filter(r =>
     !q || (r.name + r.role + r.wallet + r.country).toLowerCase().includes(q));
@@ -32,18 +55,18 @@ function renderEmployees(){
   }
 
   tb.innerHTML = filtered.map(e => {
-    const gross = parseFloat(e.salary);
+    const gross  = parseFloat(e.salary);
     const taxPct = isDemo ? (e.tax/100).toFixed(2) : (e.tax/100).toFixed(2);
-    const net = (gross * (1 - (e.tax/10000))).toFixed(2);
+    const net    = (gross * (1 - (e.tax/10000))).toFixed(2);
     return `
     <tr>
       <td style="font-weight:600">${e.name}</td>
       <td style="color:var(--muted)">${e.role}</td>
       <td>${badge(e.country,'blue')}</td>
       <td style="font-family:monospace;font-size:.78rem">${shortAddr(e.wallet)}</td>
-      <td>${e.currency} ${gross.toLocaleString()}</td>
+      <td>${e.currency} ${fmt(gross)}</td>
       <td style="color:var(--muted)">${taxPct}%</td>
-      <td style="color:var(--green);font-weight:600">${e.currency} ${Number(net).toLocaleString()}</td>
+      <td style="color:var(--green);font-weight:600">${e.currency} ${fmt(net)}</td>
       <td>${e.active ? badge('Active','green') : badge('Inactive','red')}</td>
       <td>${e.auto ? '<i class="fas fa-circle-check" style="color:var(--green)"></i>' :
                     '<i class="fas fa-circle-xmark" style="color:var(--muted)"></i>'}</td>
@@ -64,9 +87,10 @@ function renderAudit(){
           <span style="color:var(--muted);font-family:monospace">${a.t}</span>
           &nbsp; ${badge(a.kind,'gold')}
           &nbsp; <b>${a.who}</b>
+          &nbsp; <span style="color:var(--muted);font-size:.78rem">${a.country}</span>
         </div>
         <div style="text-align:right">
-          <b style="color:var(--green)">${a.cur} ${a.amt}</b>
+          <b style="color:var(--green)">${a.cur} ${fmt(a.amt)}</b>
           <div style="color:var(--muted);font-family:monospace;font-size:.75rem">${a.tx}</div>
         </div>
       </div>`).join('');
@@ -78,19 +102,19 @@ function renderAudit(){
 
 function renderStats(){
   if (isDemo){
-    document.getElementById('s-treasury').textContent = GOZZY_DEMO.treasury + ' ETH';
-    document.getElementById('s-count').textContent    = GOZZY_DEMO.employees.length;
-    const total = GOZZY_DEMO.employees.reduce((s,e)=>s+parseFloat(e.salary),0);
-    document.getElementById('s-payroll').textContent  = '$' + total.toLocaleString();
+    document.getElementById('s-treasury').textContent = fmt(demoState.treasury, 4) + ' ETH';
+    document.getElementById('s-count').textContent    = demoState.employees.length;
+    const total = demoState.employees.reduce((s,e)=>s+parseFloat(e.salary),0);
+    document.getElementById('s-payroll').textContent  = '$' + fmt(total);
     document.getElementById('s-next').textContent     = '31 Oct, 23:59';
   } else {
     document.getElementById('s-count').textContent    = liveEmployees.length;
     const total = liveEmployees.reduce((s,e)=>s+parseFloat(e.salary),0);
-    document.getElementById('s-payroll').textContent  = total.toFixed(2) + ' ETH';
+    document.getElementById('s-payroll').textContent  = fmt(total) + ' ETH';
   }
 }
 
-// ---------- Live data loader ----------
+// ---------- Live loader ----------
 async function loadLiveEmployees(){
   if (!isReady()) return;
   const count = await gozzyContract.methods.getEmployeeCount().call();
@@ -99,11 +123,9 @@ async function loadLiveEmployees(){
     const w = await gozzyContract.methods.getEmployeeAt(i).call();
     const e = await gozzyContract.methods.getEmployee(w).call();
     liveEmployees.push({
-      wallet: w,
-      name: e[0], role: e[1], country: e[2], currency: e[3],
+      wallet: w, name: e[0], role: e[1], country: e[2], currency: e[3],
       salary: gozzyWeb3.utils.fromWei(e[4],'ether'),
-      tax: Number(e[5]),
-      lastPaidAt: Number(e[6]),
+      tax: Number(e[5]), lastPaidAt: Number(e[6]),
       totalGross: e[7], totalNet: e[8], totalTax: e[9],
       active: e[10], auto: e[11]
     });
@@ -111,12 +133,26 @@ async function loadLiveEmployees(){
   const bal = await gozzyWeb3.eth.getBalance(GOZZY_CONFIG.contract);
   document.getElementById('s-treasury').textContent = gozzyWeb3.utils.fromWei(bal,'ether') + ' ETH';
   document.getElementById('s-next').textContent     = '01 Nov, 00:00';
-  renderEmployees();
-  renderStats();
+  renderEmployees(); renderStats();
 }
 
-// ---------- Actions ----------
+// ---------- Connect ----------
 async function connectWallet(){
+  if (isDemo){
+    try{
+      await GozzyDemo.connect({ role: 'admin' });
+      demoState.connected = true;
+      demoState.address   = GozzyDemo.getAddress();
+      document.getElementById('walletLabel').textContent = shortAddr(demoState.address);
+      log('✅ Wallet connected — ' + shortAddr(demoState.address), 'ok');
+      renderEmployees(); renderStats(); renderAudit();
+    } catch(e){
+      log('❌ ' + e.message, 'error');
+    }
+    return;
+  }
+
+  // Live mode unchanged
   try{
     await gozzyConnect();
     document.getElementById('walletLabel').textContent = shortAddr(gozzyAccount);
@@ -128,11 +164,15 @@ async function connectWallet(){
 }
 
 function ensureLive(){
-  if (isDemo) return true;
+  if (isDemo) {
+    if (!demoState.connected){ log('Connect wallet first', 'error'); return false; }
+    return true;
+  }
   if (!isReady()){ log('Connect wallet first', 'error'); return false; }
   return true;
 }
 
+// ---------- Actions ----------
 async function addEmployee(){
   const name     = document.getElementById('empName').value.trim();
   const role     = document.getElementById('empRole').value.trim();
@@ -143,86 +183,34 @@ async function addEmployee(){
   const wallet   = document.getElementById('empWallet').value.trim();
 
   if (!name || !wallet || !salary) return log('Fill name, wallet and salary', 'error');
-  if (taxPct < 0 || taxPct > 50) return log('Tax must be 0–50%', 'error');
-
+  if (taxPct < 0 || taxPct > 50)   return log('Tax must be 0–50%', 'error');
   const taxBps = Math.round(taxPct * 100);
 
-  // DEMO MODE
   if (isDemo){
-    if (GOZZY_DEMO.employees.some(e => e.wallet.toLowerCase() === wallet.toLowerCase()))
-      return log('Employee already exists', 'error');
-    GOZZY_DEMO.employees.push({
-      wallet, name, role, country, currency,
-      salary, tax: taxBps, lastPaid: new Date().toISOString().slice(0,10),
-      totalGross: '0', totalNet: '0', totalTax: '0', auto: true, active: true
-    });
-    log(`✅ ${name} added to demo payroll`, 'ok');
-    renderEmployees(); renderStats();
-    ['empName','empRole','empSalary','empWallet'].forEach(id => document.getElementById(id).value = '');
-    return;
-  }
+    if (!ensureLive()) return;
 
-  // LIVE MODE
-  if (!ensureLive()) return;
-  if (!gozzyWeb3.utils.isAddress(wallet)) return log('Invalid wallet address', 'error');
-  if (isNaN(parseFloat(salary))) return log('Salary must be a number', 'error');
+    // Realistic: simulate an on-chain "addEmployee" tx
+    try{
+      const fakeWallet = wallet.startsWith("0x") && wallet.length === 42
+        ? wallet
+        : "0x" + Math.random().toString(16).slice(2).padEnd(40,'0').slice(0,40);
 
-  try{
-    log('Confirm in MetaMask...');
-    await gozzyAddEmployee(wallet, name, role, country, currency, salary, taxBps);
-log('✅ ' + name + ' added on-chain', 'ok');
-    ['empName','empRole','empSalary','empWallet'].forEach(id => document.getElementById(id).value='');
-    await loadLiveEmployees();
-  } catch(e){
-    log('❌ ' + e.message, 'error');
-  }
-}
+      await GozzyDemo.simulateTx({
+        title: "Add employee to payroll",
+        subtitle: name + " · " + role,
+        amount: 0.00042,
+        currency: "ETH",
+        gasEth: "0.00042"
+      });
 
-async function payOne(wallet, name){
-  if (isDemo){ log(`💸 Paid ${name} (demo)`, 'ok'); return; }
-  if (!ensureLive()) return;
-  try{ log(`Paying ${name}...`); await gozzyPaySalary(wallet); log('✅ Paid', 'ok'); await loadLiveEmployees(); }
-  catch(e){ log('❌ ' + e.message, 'error'); }
-}
-
-async function payBonus(wallet, name){
-  const amt = prompt(`Bonus for ${name} (ETH):`);
-  if (!amt) return;
-  if (isDemo){ log(`🎁 Bonus ${amt} ETH to ${name} (demo)`, 'ok'); return; }
-  if (!ensureLive()) return;
-  try{ await gozzyPayBonus(wallet, amt); log('✅ Bonus paid', 'ok'); await loadLiveEmployees(); }
-  catch(e){ log('❌ ' + e.message, 'error'); }
-}
-
-async function payAll(){
-  if (isDemo){ log('⚡ Batch pay executed (demo)', 'ok'); return; }
-  if (!ensureLive()) return;
-  try{ await gozzyPayAll(); log('✅ Batch payment done', 'ok'); await loadLiveEmployees(); }
-  catch(e){ log('❌ ' + e.message, 'error'); }
-}
-
-async function runAuto(){
-  if (isDemo){ log('🤖 Auto-payroll executed (demo)', 'ok'); return; }
-  if (!ensureLive()) return;
-  try{ await gozzyRunAuto(); log('✅ Auto-payroll done', 'ok'); await loadLiveEmployees(); }
-  catch(e){ log('❌ ' + e.message, 'error'); }
-}
-
-async function depositFunds(){
-  const amt = document.getElementById('depositAmt').value.trim();
-  if (!amt) return log('Enter ETH amount', 'error');
-  if (isDemo){ log(`🏦 Treasury funded with ${amt} ETH (demo)`, 'ok'); document.getElementById('depositAmt').value=''; return; }
-  if (!ensureLive()) return;
-  try{ await gozzyDeposit(amt); log('✅ Treasury funded', 'ok'); document.getElementById('depositAmt').value=''; await loadLiveEmployees(); }
-  catch(e){ log('❌ ' + e.message, 'error'); }
-}
-
-// ---------- Boot ----------
-document.addEventListener('DOMContentLoaded', () => {
-  renderEmployees(); renderStats(); renderAudit();
-  if (!isDemo && typeof window.ethereum !== 'undefined'){
-    window.ethereum.request({ method:'eth_accounts' }).then(a => {
-      if (a?.length) connectWallet();
-    }).catch(()=>{});
-  }
-});
+      demoState.employees.push({
+        wallet: fakeWallet, name, role, country, currency,
+        salary, tax: taxBps, auto: true, active: true,
+        lastPaid: "—", totalGross: 0, totalNet: 0, totalTax: 0, ytdNet: 0
+      });
+      log(`✅ ${name} added to payroll (tx confirmed)`, 'ok');
+      renderEmployees(); renderStats();
+      ['empName','empRole','empSalary','empWallet'].forEach(id => document.getElementById(id).value = '');
+    } catch(e){
+      log('❌ ' + e.message, 'error');
+    }
