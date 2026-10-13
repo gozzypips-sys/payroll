@@ -93,6 +93,7 @@ window.GOZZY_DEMO_MODE        = <?= $demo ? 'true' : 'false' ?>;
 </script>
 <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>
 <script src="assets/js/demo-data.js"></script>
+<script src="assets/js/demo-engine.js"></script>   <!-- NEW -->
 <script src="assets/js/web3-handler.js"></script>
 <script src="assets/js/employee-terminal.js"></script>
 </body>
